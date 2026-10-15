@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# b2b-basket-splitter
 
-## Getting Started
+A web application for optimizing wholesale purchase orders across multiple suppliers. It automates product allocation to minimize the total order cost, taking into account wholesale price differences, delivery charges, and minimum order values (MOQ).
 
-First, run the development server:
+## Problem
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+When ordering supplies for hospitality or sports venues, purchasing managers typically juggle 3–5 different wholesalers. 
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Supplier A offers cheap soft drinks, but charges 40 PLN for delivery unless the subtotal exceeds 400 PLN.
+- Supplier B has slightly higher product prices, but offers free delivery above 150 PLN.
+- Supplier C has limited stock, requiring fallback substitutions.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Calculating the optimal order split manually across multiple invoices or spreadsheets is tedious and usually leads to either overpaying for shipping or buying unnecessary stock just to reach a free-delivery threshold.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How It Works
 
-## Learn More
+1. **Order Input & Ingestion**: Ingests line items (SKU/name, quantity, target price).
+2. **Catalog & Policy Matching**: Evaluates live offers against individual supplier policies (free shipping thresholds, MOQ, stock availability).
+3. **Basket Engine**: Uses a greedy heuristic with fallback combinations to test split scenarios:
+   - Direct best-price allocation.
+   - Consolidation into fewer suppliers to waive shipping fees.
+   - Threshold-filler suggestions when a basket is close to the free shipping limit.
+4. **Export**: Generates individual purchase order sheets grouped by supplier.
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```text
+src/
+├── app/                  # Next.js App Router (dashboard and API routes)
+├── components/           # UI components (tables, scenario selectors, modals)
+├── core/
+│   ├── optimizer/        # Basket split algorithms and threshold math
+│   ├── matching/         # Product matching and substitution logic
+│   ├── audit/            # Pre-order checks and MOQ warnings
+│   └── import/           # CSV/tabular parser
+├── data/                 # Demo sets and mock supplier policies
+└── utils/                # Formatting and export helpers
