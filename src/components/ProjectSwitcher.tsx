@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Copy, FolderPlus, Trash2 } from "lucide-react";
 import type { ProjectStatus, ProjectSummary } from "@/core/projects/types";
 import { formatDatePl, formatGrosze } from "@/utils/format";
@@ -32,14 +32,36 @@ export function ProjectSwitcher({
   onRename: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [draftName, setDraftName] = useState(activeName);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftName(activeName);
+  }, [activeName, activeId]);
+
+  function commitRename(raw: string) {
+    const cleaned = raw.trim() || "Bez nazwy";
+    setDraftName(cleaned);
+    if (cleaned !== activeName) {
+      onRename(cleaned);
+    }
+  }
+
+  function handleCreateSubmit() {
+    onCreate(newName.trim() || "Nowy projekt");
+    setNewName("");
+    setError(null);
+  }
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
         className="inline-flex max-w-xs items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left hover:bg-white/5"
       >
         <span className="min-w-0">
@@ -57,7 +79,10 @@ export function ProjectSwitcher({
             type="button"
             aria-label="Zamknij listę projektów"
             className="absolute inset-0 bg-black/50"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              commitRename(draftName);
+              setOpen(false);
+            }}
           />
           <div className="relative z-10 flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl border border-white/10 bg-[#14181f] p-5">
             <p className="text-sm font-medium text-zinc-100">Projekty</p>
@@ -68,8 +93,20 @@ export function ProjectSwitcher({
             <label className="mt-4 block space-y-1.5">
               <span className="text-xs text-zinc-500">Nazwa aktywnego projektu</span>
               <input
-                value={activeName}
-                onChange={(event) => onRename(event.target.value)}
+                value={draftName}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  setDraftName(val);
+                  if (val.trim().length > 0) {
+                    onRename(val);
+                  }
+                }}
+                onBlur={() => commitRename(draftName)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
                 className="w-full rounded-lg border border-white/10 bg-[#0c0e12] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-400/50"
               />
             </label>
@@ -78,16 +115,18 @@ export function ProjectSwitcher({
               <input
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleCreateSubmit();
+                  }
+                }}
                 placeholder="Kotłownia – ul. Piotrkowska"
                 className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#0c0e12] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-400/50"
               />
               <button
                 type="button"
-                onClick={() => {
-                  onCreate(newName.trim() || "Nowy projekt");
-                  setNewName("");
-                  setError(null);
-                }}
+                onClick={handleCreateSubmit}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-2 text-xs font-medium text-slate-950 hover:bg-sky-400"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
@@ -109,7 +148,9 @@ export function ProjectSwitcher({
                     <button
                       type="button"
                       onClick={() => {
+                        commitRename(draftName);
                         onSelect(item.id);
+                        setError(null);
                         setOpen(false);
                       }}
                       className="min-w-0 flex-1 text-left"
@@ -128,6 +169,7 @@ export function ProjectSwitcher({
                         type="button"
                         title="Zduplikuj projekt"
                         onClick={() => {
+                          commitRename(draftName);
                           onDuplicate(item.id);
                           setError(null);
                         }}

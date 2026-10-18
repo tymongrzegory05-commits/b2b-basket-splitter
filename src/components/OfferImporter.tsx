@@ -33,6 +33,7 @@ function DropzoneCard({
   count,
   source,
   canRemove,
+  isLoading,
   onFile,
   onPaste,
   onRemove,
@@ -42,6 +43,7 @@ function DropzoneCard({
   count: number;
   source: string | null;
   canRemove: boolean;
+  isLoading: boolean;
   onFile: (file: File) => void;
   onPaste: () => void;
   onRemove: () => void;
@@ -59,6 +61,7 @@ function DropzoneCard({
       onDrop={(event) => {
         event.preventDefault();
         setDragOver(false);
+        if (isLoading) return;
         const file = event.dataTransfer.files[0];
         if (file) onFile(file);
       }}
@@ -78,7 +81,8 @@ function DropzoneCard({
             <button
               type="button"
               onClick={onRemove}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-rose-300"
+              disabled={isLoading}
+              className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-rose-300 disabled:opacity-40"
               aria-label={`Usuń ${title}`}
             >
               <Trash2 className="h-4 w-4" />
@@ -90,23 +94,27 @@ function DropzoneCard({
         </div>
       </div>
       <p className="mt-4 text-xs text-zinc-400">
-        {count > 0
-          ? `${count} pozycji${source ? ` · ${source}` : ""}`
-          : "Brak wczytanej oferty"}
+        {isLoading
+          ? "Przetwarzanie pliku oferty…"
+          : count > 0
+            ? `${count} pozycji${source ? ` · ${source}` : ""}`
+            : "Brak wczytanej oferty"}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
+          disabled={isLoading}
           onClick={() => inputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
         >
           <FileSpreadsheet className="h-3.5 w-3.5" />
-          Wybierz CSV / XLSX / PDF
+          {isLoading ? "Wczytywanie…" : "Wybierz CSV / XLSX / PDF"}
         </button>
         <button
           type="button"
+          disabled={isLoading}
           onClick={onPaste}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
         >
           <ClipboardPaste className="h-3.5 w-3.5" />
           Wklej ze schowka
@@ -129,10 +137,12 @@ function DropzoneCard({
 
 function MappingModal({
   pending,
+  modalError,
   onCancel,
   onConfirm,
 }: {
   pending: PendingSheet;
+  modalError: string | null;
   onCancel: () => void;
   onConfirm: (mapping: ColumnMapping) => void;
 }) {
@@ -192,9 +202,9 @@ function MappingModal({
             <table className="min-w-full text-left text-xs text-zinc-400">
               <thead>
                 <tr>
-                  {pending.sheet.headers.map((header) => (
-                    <th key={header} className="px-2 py-1.5 font-medium">
-                      {header}
+                  {pending.sheet.headers.map((header, colIndex) => (
+                    <th key={`${header}-${colIndex}`} className="px-2 py-1.5 font-medium">
+                      {header || `Kol. ${colIndex + 1}`}
                     </th>
                   ))}
                 </tr>
@@ -211,6 +221,11 @@ function MappingModal({
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : null}
+        {modalError ? (
+          <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+            {modalError}
           </div>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
@@ -311,8 +326,10 @@ export function OfferImporter({
   onRemoveSupplier: (id: WarehouseId) => void;
 }) {
   const [pending, setPending] = useState<PendingSheet | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [pasteFor, setPasteFor] = useState<WarehouseId | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
+  const [loadingWarehouse, setLoadingWarehouse] = useState<WarehouseId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unmatchedTotal = Object.values(unmatchedBySupplier).reduce(
     (sum, count) => sum + count,
@@ -321,6 +338,7 @@ export function OfferImporter({
 
   function ingestSheet(warehouse: WarehouseId, sheet: TabularSheet) {
     setError(null);
+    setModalError(null);
     if (sheet.headers.length === 0) {
       setError("Nie znaleziono nagłówków w pliku.");
       return;
@@ -338,7 +356,7 @@ export function OfferImporter({
     try {
       const offers = rowsToOffers(sheet, detection.mapping);
       if (offers.length === 0) {
-        setError("Nie udało się odczytać żadnej pozycji.");
+        setError("Nie udało się odczytać żadnej pozycji z prawidłowymi cenami.");
         return;
       }
       onOffersLoaded(warehouse, offers, sheet.sourceName);
@@ -352,15 +370,19 @@ export function OfferImporter({
   }
 
   async function handleFile(warehouse: WarehouseId, file: File) {
+    setError(null);
+    setLoadingWarehouse(warehouse);
     try {
       const sheet = await parseSpreadsheetFile(file);
       ingestSheet(warehouse, sheet);
-    } catch (error) {
+    } catch (err) {
       setError(
-        isPdfScanError(error)
+        isPdfScanError(err)
           ? PDF_SCAN_MESSAGE
           : "Nie udało się odczytać pliku. Spróbuj CSV, Excel albo wklejenia.",
       );
+    } finally {
+      setLoadingWarehouse(null);
     }
   }
 
@@ -375,9 +397,16 @@ export function OfferImporter({
             count={slot.offers.length}
             source={slot.source}
             canRemove={suppliers.length > MIN_SUPPLIERS}
+            isLoading={loadingWarehouse === slot.id}
             onFile={(file) => void handleFile(slot.id, file)}
-            onPaste={() => setPasteFor(slot.id)}
-            onRemove={() => onRemoveSupplier(slot.id)}
+            onPaste={() => {
+              setError(null);
+              setPasteFor(slot.id);
+            }}
+            onRemove={() => {
+              setError(null);
+              onRemoveSupplier(slot.id);
+            }}
           />
         ))}
       </div>
@@ -388,7 +417,7 @@ export function OfferImporter({
           className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-white/15 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5"
         >
           <Plus className="h-3.5 w-3.5" />
-          + Dodaj kolejną hurtownię
+          Dodaj kolejną hurtownię
         </button>
       ) : null}
 
@@ -409,7 +438,10 @@ export function OfferImporter({
             <button
               key={scenario.id}
               type="button"
-              onClick={() => onLoadDemo(scenario)}
+              onClick={() => {
+                setError(null);
+                onLoadDemo(scenario);
+              }}
               className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5"
             >
               {scenario.label}
@@ -427,14 +459,25 @@ export function OfferImporter({
       {pending ? (
         <MappingModal
           pending={pending}
-          onCancel={() => setPending(null)}
+          modalError={modalError}
+          onCancel={() => {
+            setPending(null);
+            setModalError(null);
+          }}
           onConfirm={(mapping) => {
             try {
               const offers = rowsToOffers(pending.sheet, mapping);
+              if (offers.length === 0) {
+                setModalError(
+                  "Wybrane kolumny nie zawierają prawidłowych pozycji i cen netto. Sprawdź wskazane kolumny.",
+                );
+                return;
+              }
               onOffersLoaded(pending.warehouse, offers, pending.sheet.sourceName);
               setPending(null);
+              setModalError(null);
             } catch (ingestError) {
-              setError(
+              setModalError(
                 ingestError instanceof Error
                   ? ingestError.message
                   : "Błąd mapowania kolumn",
